@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="ru">
+<script>
+    const TurnX= 10
+    const TurnO = 11
+    const NoneWinner = 20
+    const Draw       = 21
+    const WinnerX    = 22
+    const WinnerO    = 23
+    const PointValueEmpty = 0
+    const PointValueO     = 1
+    const PointValueX     = 2
+</script>
+<head>
+    <meta charset="utf-8" />
+    <title>X vs O — Крестики-нолики</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root {
+            --gap: 12px;
+            --size: 96px;
+            --radius: 14px;
+            --bg: #1a1a2e;
+            --card: #16213e;
+            --grid: #0f3460;
+            --txt: #e2e2e2;
+            --muted: #8892a4;
+            --accent: #e94560;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: var(--bg);
+            color: var(--txt);
+            font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        }
+
+        .wrap {
+            max-width: 640px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 18px 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 22px;
+            color: var(--accent);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, var(--size));
+            gap: 10px;
+            justify-content: center;
+            margin: 16px 0 8px;
+        }
+
+        .cell {
+            width: var(--size);
+            height: var(--size);
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 44px;
+            background: var(--grid);
+            cursor: pointer;
+            user-select: none;
+            transition: transform .05s ease, background .15s ease;
+        }
+
+        .cell:hover {
+            background: #1a4a7a;
+        }
+
+        .cell:active {
+            transform: scale(.96)
+        }
+
+        .cell.disabled {
+            opacity: .5;
+            pointer-events: none;
+            cursor: not-allowed
+        }
+
+        .bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            margin-top: 8px;
+            flex-wrap: wrap
+        }
+
+        button {
+            background: #7b2d8e;
+            color: white;
+            border: 0;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .15s ease;
+        }
+
+        button:hover {
+            background: #9b3db0;
+        }
+
+        button.secondary {
+            background: #2a2a4a;
+        }
+
+        button.secondary:hover {
+            background: #3a3a5a;
+        }
+
+        .status {
+            margin: 6px 0 0;
+            color: var(--muted)
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #2a2a4a;
+            color: #e2e8f0;
+            font-size: 12px;
+            margin-left: 6px
+        }
+
+        .ok {
+            background: #1b4332;
+            color: #a7f3d0;
+        }
+
+        .err {
+            background: #5c1a1a;
+            color: #fca5a5;
+        }
+
+        .legend {
+            font-size: 13px;
+            color: #8892a4;
+            margin-top: 10px;
+            text-align: center
+        }
+
+        a {
+            color: #e94560;
+            text-decoration: none
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <div class="card">
+            <h1>Игра: X vs O <span id="gameId" class="badge"></span></h1>
+            <div id="status" class="status">Нажми «Начать» чтобы играть</div>
+            <div id="grid" class="grid"></div>
+            <div class="bar">
+                <button id="newGame">Начать</button>
+                <button id="reset" class="secondary">Сбросить поле</button>
+            </div>
+            <div id="legend" class="legend"></div>
+        </div>
+    </div>
+
+    <script>
+        (async () => {
+            const API_BASE = '';
+            const gridEl   = document.getElementById('grid');
+            const statusEl = document.getElementById('status');
+            const idEl     = document.getElementById('gameId');
+            const newBtn   = document.getElementById('newGame');
+            const resetBtn = document.getElementById('reset');
+
+            let gameId = null;
+            let matrix = [[0,0,0],[0,0,0],[0,0,0]];
+            let winner = NoneWinner, turn = PointValueX, busy = false;
+
+            const parts = location.pathname.split('/').filter(Boolean);
+            if (parts[0] === 'game' && parts[1]) {
+                gameId = parts[1];
+            }
+
+            function draw() {
+                gridEl.innerHTML = '';
+                for (let i = 0; i < 3; i++) {
+                    for (let j = 0; j < 3; j++) {
+                        const v = matrix[i][j];
+                        const cell = document.createElement('div');
+                        cell.className = 'cell' + (busy || winner !== NoneWinner ? ' disabled' : '');
+                        cell.dataset.i = i; cell.dataset.j = j;
+                        cell.textContent = v === PointValueO ? 'O' : (v === PointValueX ? 'X' : '');
+                        cell.onclick = () => onCellClick(i, j);
+                        gridEl.appendChild(cell);
+                    }
+                }
+                idEl.textContent = gameId ? `id: ${gameId}` : '';
+                if (!gameId) {
+                    setStatus('Нажми «Начать» чтобы играть');
+                } else if (winner !== NoneWinner) {
+                    if (winner === WinnerX) setStatus('Ты победил! 🏆', 'ok');
+                    else if (winner === WinnerO) setStatus('Компьютер победил 🤖', 'ok');
+                    else if (winner === Draw) setStatus('Ничья 🤝', 'ok');
+                    else setStatus('Игра окончена', 'ok');
+                } else {
+                    setStatus(`Ты ходишь (X) ${busy ? '⏳' : ''}`);
+                }
+            }
+
+            const legendEl = document.getElementById('legend');
+            if (legendEl) {
+                legendEl.textContent = `X = ${PointValueX}, O = ${PointValueO}, пусто = ${PointValueEmpty} · Ты играешь за X · Компьютер играет за O`;
+            }
+
+            function setStatus(msg, kind) {
+                statusEl.textContent = msg;
+                statusEl.className = 'status';
+                if (kind === 'ok') statusEl.classList.add('ok', 'badge');
+                if (kind === 'err') statusEl.classList.add('err', 'badge');
+            }
+
+            async function createGame() {
+                try {
+                    busy = true; draw();
+                    const res = await fetch(API_BASE + '/game', { method: 'GET' });
+                    if (!res.ok) throw new Error('create failed: ' + res.status);
+                    const data = await res.json();
+                    gameId = data.id;
+
+                    if (history.pushState) {
+                        history.pushState(null, '', '/game/' + encodeURIComponent(gameId));
+                    } else {
+                        location.hash = '#'+gameId;
+                    }
+
+                    matrix = [[PointValueEmpty,PointValueEmpty,PointValueEmpty],[PointValueEmpty,PointValueEmpty,PointValueEmpty],[PointValueEmpty,PointValueEmpty,PointValueEmpty]];
+                    winner = NoneWinner; turn = PointValueX;
+                    setStatus('Игра создана. Ты ходишь (X)');
+                } catch (e) {
+                    console.error(e);
+                    setStatus('Не удалось создать игру', 'err');
+                } finally {
+                    busy = false; draw();
+                }
+            }
+
+            function resetLocal() {
+                matrix = [[PointValueEmpty, PointValueEmpty, PointValueEmpty], [PointValueEmpty, PointValueEmpty, PointValueEmpty], [PointValueEmpty, PointValueEmpty, PointValueEmpty]];
+                winner = NoneWinner;
+                draw();
+            }
+
+            async function onCellClick(i, j) {
+                if (busy || !gameId || winner !== NoneWinner) return;
+                if (matrix[i][j] !== PointValueEmpty) return;
+                if (turn !== PointValueX) { setStatus('Сейчас не твой ход', 'err'); return; }
+
+                matrix = matrix.map(row => row.slice());
+                matrix[i][j] = PointValueX;
+                busy = true; draw();
+
+                try {
+                    const res = await fetch(API_BASE + '/game/' + encodeURIComponent(gameId), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ board: matrix })
+                    });
+
+                    if (!res.ok) {
+                        const err = await safeJson(res);
+                        const msg = err?.error || ('ошибка сервера ' + res.status);
+                        setStatus(msg, 'err');
+                        matrix[i][j] = PointValueEmpty;
+                        return;
+                    }
+
+                    const data = await res.json();
+                    matrix = data.board ?? matrix;
+                    winner = data.winner ?? NoneWinner;
+
+                    if (winner) {
+                        if (winner === WinnerX) setStatus('Ты победил! 🏆', 'ok');
+                        else if (winner === WinnerO) setStatus('Компьютер победил 🤖', 'ok');
+                        else if (winner === Draw) setStatus('Ничья 🤝', 'ok');
+                        else setStatus('Игра окончена', 'ok');
+                    } else {
+                        setStatus('Ты ходишь (X)');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    setStatus('Нет связи с сервером', 'err');
+                    matrix[i][j] = PointValueEmpty;
+                } finally {
+                    busy = false; draw();
+                }
+            }
+
+            async function safeJson(res) {
+                try { return await res.json(); } catch { return null; }
+            }
+
+            newBtn.addEventListener('click', createGame);
+            resetBtn.addEventListener('click', resetLocal);
+
+            draw();
+        })();
+    </script>
+</body>
+
+</html>
