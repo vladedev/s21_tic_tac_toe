@@ -1,39 +1,29 @@
 package datasource
 
 import (
-	"Project03-Go_Bootcamp/internal/domain"
-	"context"
-	"errors"
-	"sync"
+	"tic-tac-toe/internal/domain"
 )
 
-type MainRepo struct {
-	data sync.Map
+// Структура, которая РЕАЛИЗУЕТ интерфейс domain.GameRepository
+type gameRepository struct {
+	storage *GameStorage // конкретное хранилище
 }
 
-func New() *MainRepo {
-	return &MainRepo{}
+func NewGameRepository(storage *GameStorage) domain.GameRepository {
+	return &gameRepository{storage: storage}
 }
 
-func (m *MainRepo) Save(ctx context.Context, g domain.Game, id string) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		m.data.Store(id, ToDS(g))
-		return nil
+// Реализация метода Save, сохраняет текущую игру с ID и состоянием поля
+func (r *gameRepository) Save(game *domain.Game) error {
+	r.storage.games.Store(game.ID, ToDTO(game))
+	return nil
+}
+
+// Реализация метода Get, находит игру с ID и состоянием поля
+func (r *gameRepository) Get(id string) (*domain.Game, error) {
+	val, ok := r.storage.games.Load(id)
+	if !ok {
+		return nil, domain.ErrGameNotFound
 	}
-}
-
-func (m *MainRepo) Get(ctx context.Context, id string) (domain.Game, error) {
-	select {
-	case <-ctx.Done():
-		return domain.Game{}, ctx.Err()
-	default:
-		value, ok := m.data.Load(id)
-		if !ok {
-			return domain.Game{}, errors.New("game not found: " + id)
-		}
-		return ToDomain(value.(GameDS)), nil
-	}
+	return ToDomain(val.(*GameDTO)), nil
 }
